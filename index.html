@@ -2,25 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Minimal Maps Navigation</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     
     <style>
-        /* Base Dark Theme Variables */
         :root { 
             --bg: #000000; --fg: #ffffff; --accent: #ea1b23; 
-            --ui-bg: rgba(0, 0, 0, 0.85); --border: #333333; 
-            --dim-route: #444444;
+            --ui-bg: rgba(0, 0, 0, 0.85); --border: #333333; --dim-route: #444444;
         }
 
-        /* Light Theme Variables */
         body.light-mode {
             --bg: #ffffff; --fg: #000000; 
-            --ui-bg: rgba(255, 255, 255, 0.85); --border: #cccccc;
-            --dim-route: #bbbbbb;
+            --ui-bg: rgba(255, 255, 255, 0.85); --border: #cccccc; --dim-route: #bbbbbb;
         }
 
         body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: 'Space Mono', monospace; overflow: hidden; transition: background 0.3s, color 0.3s; }
@@ -31,39 +27,72 @@
         .leaflet-control-zoom { display: none; }
         .leaflet-control-attribution { background: var(--bg) !important; color: #555 !important; font-family: 'Space Mono', monospace; font-size: 0.7rem; transition: background 0.3s; }
 
-        #ui-panel { position: absolute; top: 20px; left: 20px; z-index: 1000; background: var(--ui-bg); border: 1px solid var(--border); padding: 20px; width: 320px; backdrop-filter: blur(10px); transition: opacity 0.3s, background 0.3s, border-color 0.3s; }
+        #ui-panel { 
+            position: absolute; top: 20px; left: 20px; z-index: 1000; background: var(--ui-bg); border: 1px solid var(--border); 
+            padding: 20px; width: 320px; backdrop-filter: blur(10px); transition: opacity 0.3s, background 0.3s, border-color 0.3s; box-sizing: border-box;
+        }
         
-        #drive-hud { display: none; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: var(--ui-bg); border: 1px solid var(--border); border-bottom: 3px solid var(--accent); padding: 20px; width: 80%; max-width: 500px; text-align: center; backdrop-filter: blur(10px); transition: background 0.3s, border-color 0.3s; }
+        #drive-hud { 
+            display: none; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: var(--ui-bg); 
+            border: 1px solid var(--border); border-bottom: 3px solid var(--accent); padding: 20px; width: 80%; max-width: 500px; 
+            text-align: center; backdrop-filter: blur(10px); transition: background 0.3s, border-color 0.3s; box-sizing: border-box;
+        }
         
+        @media (max-width: 768px) {
+            #ui-panel { top: auto; bottom: 20px; left: 5%; width: 90%; max-height: 50vh; overflow-y: auto; box-shadow: 0 -10px 30px rgba(0,0,0,0.5); }
+            #drive-hud { width: 90%; top: 10px; padding: 15px; }
+            #hud-instruction { font-size: 1.2rem !important; }
+        }
+
         .header-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; }
         h1 { font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2px; margin: 0; padding-bottom: 5px; }
         h2 { font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; margin: 0; }
         .dot { color: var(--accent); }
 
-        .input-group { display: flex; gap: 10px; margin-bottom: 12px; }
-        input { width: 100%; box-sizing: border-box; background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 12px; font-family: 'Space Mono', monospace; outline: none; transition: border 0.3s, color 0.3s; }
-        .input-group input { margin-bottom: 0; }
+        .input-wrapper { position: relative; width: 100%; margin-bottom: 12px; }
+        .input-group { display: flex; gap: 10px; width: 100%; }
+        input { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border); color: var(--fg); padding: 12px; font-family: 'Space Mono', monospace; outline: none; transition: border 0.3s, color 0.3s, background 0.3s; }
         input:focus { border-color: var(--accent); }
         input::placeholder { color: #888; }
         
+        /* Autocomplete Dropdown Styles */
+        .autocomplete-list { 
+            position: absolute; top: 100%; left: 0; right: 0; background: var(--bg); border: 1px solid var(--border); 
+            border-top: none; z-index: 1001; max-height: 150px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: none;
+        }
+        .autocomplete-item { padding: 10px; font-size: 0.8rem; cursor: pointer; border-bottom: 1px solid var(--border); }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item:hover { background: var(--border); color: var(--accent); }
+
         button { background: var(--fg); color: var(--bg); border: none; padding: 12px; font-family: 'Space Mono', monospace; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: 0.3s; width: 100%; margin-top: 5px; }
         button:hover { background: var(--accent); color: var(--fg); }
 
         .btn-icon { width: auto; padding: 0 10px; font-size: 1.2rem; background: transparent; color: var(--fg); border: 1px solid var(--border); margin-top: 0; }
         .btn-icon:hover { color: var(--accent); border-color: var(--accent); background: transparent; }
 
+        .settings-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 0.9rem; }
+        .settings-row button { width: auto; padding: 5px 15px; font-size: 0.8rem; margin: 0; border: 1px solid var(--border); background: transparent; color: var(--fg); }
+        .settings-row button:hover { border-color: var(--accent); color: var(--accent); }
+
         #status-container { margin-top: 15px; }
         #status { font-size: 0.8rem; color: #888; text-transform: lowercase; margin-bottom: 5px; }
         #stats { font-size: 0.85rem; color: var(--accent); font-weight: bold; text-transform: lowercase; margin-bottom: 10px; }
 
-        /* Route Options UI */
         #route-options { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
-        .route-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 8px; font-size: 0.8rem; text-align: left; text-transform: lowercase; font-weight: normal; }
+        .route-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 12px; font-size: 0.8rem; text-align: left; text-transform: lowercase; font-weight: normal; }
         .route-btn.selected { border-color: var(--accent); color: var(--accent); font-weight: bold; }
         .route-btn:hover { border-color: var(--accent); background: transparent; color: var(--accent); }
 
-        #hud-instruction { font-size: 1.6rem; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; }
-        #hud-distance { font-size: 1rem; color: var(--accent); }
+        /* HUD Styles including Speedometer */
+        #hud-instruction { font-size: 1.6rem; font-weight: bold; margin: 0 0 5px 0; text-transform: uppercase; transition: color 0.3s; }
+        .hud-rerouting { color: var(--accent); animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        .hud-metrics { display: flex; justify-content: space-around; align-items: center; margin-bottom: 10px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 5px 0; }
+        .metric-box { display: flex; flex-direction: column; }
+        .metric-val { font-size: 1.2rem; font-weight: bold; color: var(--accent); }
+        .metric-label { font-size: 0.6rem; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+        
         #btn-exit-nav { background: transparent; border: 1px solid var(--border); color: var(--fg); margin-top: 15px; width: auto; padding: 8px 20px; font-size: 0.8rem; }
         #btn-exit-nav:hover { border-color: var(--accent); }
         
@@ -80,11 +109,19 @@
                 <button class="btn-icon" onclick="toggleSettings()" title="Settings">⚙</button>
             </div>
             
-            <div class="input-group">
-                <input type="text" id="start" placeholder="origin...">
-                <button class="btn-icon" onclick="useCurrentLocation()" title="Use Current GPS">⌖</button>
+            <div class="input-wrapper">
+                <div class="input-group">
+                    <input type="text" id="start" placeholder="origin..." autocomplete="off">
+                    <button class="btn-icon" onclick="useCurrentLocation()" title="Use Current GPS">⌖</button>
+                </div>
+                <div id="start-autocomplete" class="autocomplete-list"></div>
             </div>
-            <input type="text" id="end" placeholder="destination..." style="margin-bottom: 12px;">
+
+            <div class="input-wrapper">
+                <input type="text" id="end" placeholder="destination..." autocomplete="off">
+                <div id="end-autocomplete" class="autocomplete-list"></div>
+            </div>
+
             <button onclick="getDirections()" id="btn-nav">Calculate Route</button>
             
             <div id="status-container">
@@ -101,13 +138,39 @@
                 <h2>SETTINGS<span class="dot">.</span></h2>
                 <button class="btn-icon" onclick="toggleSettings()" title="Close Settings">✕</button>
             </div>
-            <button onclick="toggleTheme()" id="btn-theme" style="background: transparent; border: 1px solid var(--border); color: var(--fg);">Switch to Light Mode</button>
+            <div class="settings-row">
+                <span>Theme</span>
+                <button onclick="toggleTheme()" id="btn-theme">Toggle Dark/Light</button>
+            </div>
+            <div class="settings-row">
+                <span>Units</span>
+                <button onclick="toggleUnits()" id="btn-units">Metric (km/h)</button>
+            </div>
+            <div class="settings-row">
+                <span>Voice Nav</span>
+                <button onclick="toggleVoice()" id="btn-voice">ON</button>
+            </div>
         </div>
     </div>
 
     <div id="drive-hud">
         <div id="hud-instruction">Proceed to Route</div>
-        <div id="hud-distance">Tracking GPS...</div>
+        
+        <div class="hud-metrics">
+            <div class="metric-box">
+                <span id="hud-speed" class="metric-val">--</span>
+                <span class="metric-label">Speed</span>
+            </div>
+            <div class="metric-box">
+                <span id="hud-distance" class="metric-val">--</span>
+                <span class="metric-label">Next Turn</span>
+            </div>
+            <div class="metric-box">
+                <span id="hud-eta" class="metric-val">--</span>
+                <span class="metric-label">ETA / Rem</span>
+            </div>
+        </div>
+
         <button id="btn-exit-nav" onclick="exitNavigation()">End Drive</button>
     </div>
 
@@ -118,25 +181,92 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <script>
+        // --- Core State ---
         const map = L.map('map', { zoomControl: false }).setView([51.505, -0.09], 13);
         let isLightMode = false;
+        let useImperial = false; 
+        let useVoice = true;
         
         const tilesDark = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
         const tilesLight = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
         let mapLayer = L.tileLayer(tilesDark, { attribution: '&copy; CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
 
-        let allRoutesData = [];
-        let routePolylines = [];
-        let selectedRouteIndex = 0;
-        let markers = [];
-        let trackerMarker = null;
-        let watchId = null;
-        let currentStepIndex = 0;
-        let lastPos = null;
+        let allRoutesData = [], routePolylines = [], selectedRouteIndex = 0;
+        let selectedRouteCoords = [], globalEndCoords = null, markers = [];
+        let trackerMarker = null, watchId = null, currentStepIndex = 0;
+        let lastPos = null, isRerouting = false;
 
         const setStatus = (msg) => document.getElementById('status').innerText = msg;
         const setStats = (msg) => document.getElementById('stats').innerText = msg;
 
+        // --- FEATURE 1: Auto Day/Night Switcher ---
+        // Checks OS preference on load
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+            toggleTheme(); 
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if ((event.matches && isLightMode) || (!event.matches && !isLightMode)) toggleTheme();
+        });
+
+        // --- FEATURE 2: Search Autocomplete ---
+        function setupAutocomplete(inputId, listId) {
+            const input = document.getElementById(inputId);
+            const list = document.getElementById(listId);
+            let debounceTimer;
+
+            input.addEventListener('input', () => {
+                clearTimeout(debounceTimer);
+                const query = input.value;
+                if (query.length < 3) { list.style.display = 'none'; return; }
+                
+                debounceTimer = setTimeout(async () => {
+                    try {
+                        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=4`);
+                        const data = await res.json();
+                        list.innerHTML = '';
+                        if(data.length > 0) {
+                            data.forEach(item => {
+                                const div = document.createElement('div');
+                                div.className = 'autocomplete-item';
+                                // Slice the display name so it's not massively long
+                                div.innerText = item.display_name.split(',').slice(0,3).join(',');
+                                div.onclick = () => {
+                                    input.value = div.innerText;
+                                    list.style.display = 'none';
+                                };
+                                list.appendChild(div);
+                            });
+                            list.style.display = 'block';
+                        } else {
+                            list.style.display = 'none';
+                        }
+                    } catch (e) { console.error("Autocomplete error", e); }
+                }, 500); // 500ms delay protects against rate-limiting
+            });
+
+            // Hide dropdown if clicked outside
+            document.addEventListener('click', (e) => {
+                if (e.target !== input && e.target !== list) list.style.display = 'none';
+            });
+        }
+        setupAutocomplete('start', 'start-autocomplete');
+        setupAutocomplete('end', 'end-autocomplete');
+
+        // --- FEATURE 3: Voice Navigation (TTS) ---
+        function speakInstruction(text) {
+            if (!useVoice || !('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel(); // Interrupt current speech
+            
+            // Filter out minor directions like "Continue straight" to prevent spam
+            if (text.toLowerCase().includes("head ") || text.toLowerCase().includes("continue")) return; 
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0; 
+            window.speechSynthesis.speak(utterance);
+        }
+
+
+        // --- UI & Settings Logic ---
         function toggleSettings() {
             const mainView = document.getElementById('view-main');
             const settingsView = document.getElementById('view-settings');
@@ -149,10 +279,45 @@
             document.body.classList.toggle('light-mode');
             map.removeLayer(mapLayer);
             mapLayer = L.tileLayer(isLightMode ? tilesLight : tilesDark, { attribution: '&copy; CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
-            document.getElementById('btn-theme').innerText = isLightMode ? "Switch to Dark Mode" : "Switch to Light Mode";
-            if (allRoutesData.length > 0) renderRoutes(); // Redraw lines to fix dim colors
+            if (allRoutesData.length > 0) renderRoutes(); 
         }
 
+        function toggleUnits() {
+            useImperial = !useImperial;
+            document.getElementById('btn-units').innerText = useImperial ? "Imperial (mi/mph)" : "Metric (km/kmh)";
+            if (allRoutesData.length > 0) renderRoutes(); 
+        }
+
+        function toggleVoice() {
+            useVoice = !useVoice;
+            document.getElementById('btn-voice').innerText = useVoice ? "ON" : "OFF";
+            document.getElementById('btn-voice').style.color = useVoice ? "var(--fg)" : "#888";
+        }
+
+        // --- Formatting Functions ---
+        function formatDistance(meters) {
+            if (useImperial) {
+                const miles = meters * 0.000621371;
+                if (miles < 0.1) return Math.round(meters * 3.28084) + ' ft';
+                return miles.toFixed(1) + ' mi';
+            } else {
+                if (meters < 100) return Math.round(meters) + ' m';
+                return (meters / 1000).toFixed(1) + ' km';
+            }
+        }
+
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            return h > 0 ? `${h}h ${m}m` : `${m}m`;
+        }
+
+        function updateInstruction(text) {
+            document.getElementById('hud-instruction').innerText = text;
+            speakInstruction(text); // Speak the new instruction
+        }
+
+        // --- Core App Logic ---
         function useCurrentLocation() {
             setStatus("acquiring satellite lock...");
             if ("geolocation" in navigator) {
@@ -184,12 +349,6 @@
             return text;
         }
 
-        function formatTime(seconds) {
-            const h = Math.floor(seconds / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
-            return h > 0 ? `${h}h ${m}m` : `${m}m`;
-        }
-
         async function getDirections() {
             const startQuery = document.getElementById('start').value;
             const endQuery = document.getElementById('end').value;
@@ -202,60 +361,46 @@
             
             try {
                 const startCoords = await geocode(startQuery);
-                const endCoords = await geocode(endQuery);
+                globalEndCoords = await geocode(endQuery); 
 
-                // Added alternatives=true to request multiple routes
-                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startCoords.lon},${startCoords.lat};${endCoords.lon},${endCoords.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`;
+                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startCoords.lon},${startCoords.lat};${globalEndCoords.lon},${globalEndCoords.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`;
                 const res = await fetch(osrmUrl);
                 const data = await res.json();
 
                 if (data.routes.length === 0) throw new Error("no valid route found.");
 
                 allRoutesData = data.routes;
-                selectedRouteIndex = 0; // Default to fastest
                 
-                // Set start/end markers
                 markers.forEach(m => map.removeLayer(m));
                 markers = [];
                 const markerOpts = { radius: 5, color: '#ea1b23', fillColor: '#ea1b23', fillOpacity: 1, weight: 2 };
                 markers.push(L.circleMarker([startCoords.lat, startCoords.lon], markerOpts).addTo(map));
-                markers.push(L.circleMarker([endCoords.lat, endCoords.lon], markerOpts).addTo(map));
+                markers.push(L.circleMarker([globalEndCoords.lat, globalEndCoords.lon], markerOpts).addTo(map));
 
-                renderRoutes();
-                
+                selectRoute(0); 
                 setStatus(`${allRoutesData.length} route(s) established.`);
                 document.getElementById('btn-sim').style.display = 'block';
             } catch (err) { setStatus(err.message); }
         }
 
         function renderRoutes() {
-            // Clear existing lines
             routePolylines.forEach(p => map.removeLayer(p));
             routePolylines = [];
             const optionsContainer = document.getElementById('route-options');
             optionsContainer.innerHTML = '';
-
             const dimColor = isLightMode ? '#bbbbbb' : '#444444';
 
-            // Draw routes. Draw unselected first so selected renders on top.
             allRoutesData.forEach((route, index) => {
                 const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
                 const isSelected = index === selectedRouteIndex;
                 
-                const polyline = L.polyline(coords, { 
-                    color: isSelected ? '#ea1b23' : dimColor, 
-                    weight: isSelected ? 5 : 4, 
-                    opacity: isSelected ? 1 : 0.6,
-                    interactive: true
-                }).addTo(map);
+                const polyline = L.polyline(coords, { color: isSelected ? '#ea1b23' : dimColor, weight: isSelected ? 5 : 4, opacity: isSelected ? 1 : 0.6, interactive: true }).addTo(map);
 
-                // Allow clicking map lines to select route
                 polyline.on('click', () => selectRoute(index));
                 routePolylines.push(polyline);
 
-                // Build UI Buttons
                 const timeStr = formatTime(route.duration);
-                const distStr = (route.distance / 1000).toFixed(1) + 'km';
+                const distStr = formatDistance(route.distance);
                 
                 const btn = document.createElement('button');
                 btn.className = `route-btn ${isSelected ? 'selected' : ''}`;
@@ -265,21 +410,22 @@
 
                 if (isSelected) {
                     setStats(`est: ${timeStr} | dist: ${distStr}`);
-                    polyline.bringToFront(); // Force Leaflet to draw this line on top
+                    polyline.bringToFront(); 
                 }
             });
 
-            // Auto-zoom to fit all routes
-            const group = new L.featureGroup(routePolylines);
-            map.fitBounds(group.getBounds(), { padding: [50, 50] });
+            if (!document.body.classList.contains('driving')) {
+                const group = new L.featureGroup(routePolylines);
+                map.fitBounds(group.getBounds(), { padding: [50, 50] });
+            }
         }
 
         function selectRoute(index) {
             selectedRouteIndex = index;
-            renderRoutes(); // Redraw to update colors and UI
+            selectedRouteCoords = allRoutesData[index].geometry.coordinates.map(c => [c[1], c[0]]);
+            renderRoutes(); 
         }
 
-        // --- Navigation ---
         function calculateBearing(lat1, lon1, lat2, lon2) {
             const toRad = deg => (deg * Math.PI) / 180;
             const toDeg = rad => (rad * 180) / Math.PI;
@@ -290,18 +436,40 @@
             return (toDeg(Math.atan2(y, x)) + 360) % 360;
         }
 
+        async function triggerReroute(currentLatLng) {
+            isRerouting = true;
+            const hudInst = document.getElementById('hud-instruction');
+            hudInst.innerText = "REROUTING...";
+            hudInst.classList.add('hud-rerouting');
+            document.getElementById('hud-distance').innerText = "calculating...";
+            document.getElementById('hud-eta').innerText = "--";
+            speakInstruction("Rerouting");
+
+            try {
+                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${currentLatLng[1]},${currentLatLng[0]};${globalEndCoords.lon},${globalEndCoords.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`;
+                const res = await fetch(osrmUrl);
+                const data = await res.json();
+
+                if (data.routes.length > 0) {
+                    allRoutesData = data.routes;
+                    currentStepIndex = 0; 
+                    selectRoute(0);       
+                    hudInst.classList.remove('hud-rerouting');
+                    updateInstruction(parseInstruction(allRoutesData[0].legs[0].steps[0]));
+                }
+            } catch (err) { console.error("Reroute failed", err); }
+            isRerouting = false;
+        }
+
         function startNavigation() {
             if (allRoutesData.length === 0 || !("geolocation" in navigator)) return;
-
-            // Grab the specific steps from the selected route
-            const selectedSteps = allRoutesData[selectedRouteIndex].legs[0].steps;
 
             document.getElementById('ui-panel').style.display = 'none';
             document.getElementById('drive-hud').style.display = 'block';
             document.body.classList.add('driving'); 
             
             currentStepIndex = 0;
-            document.getElementById('hud-instruction').innerText = parseInstruction(selectedSteps[currentStepIndex]);
+            updateInstruction(parseInstruction(allRoutesData[selectedRouteIndex].legs[0].steps[currentStepIndex]));
 
             if (trackerMarker) map.removeLayer(trackerMarker);
             const chevronIcon = L.divIcon({ html: '<div class="chevron-icon">▲</div>', className: '', iconSize: [24, 24], iconAnchor: [12, 12] });
@@ -310,11 +478,20 @@
             watchId = navigator.geolocation.watchPosition((pos) => {
                 const lat = pos.coords.latitude;
                 const lon = pos.coords.longitude;
+                const speedRaw = pos.coords.speed; // meters per second
                 const currentLatLng = [lat, lon];
                 
                 trackerMarker.setLatLng(currentLatLng);
                 map.setView(currentLatLng, 18); 
                 
+                // --- FEATURE 4: Live Speedometer ---
+                if (speedRaw !== null && !isNaN(speedRaw)) {
+                    const speedMultiplier = useImperial ? 2.23694 : 3.6; // m/s to mph OR km/h
+                    document.getElementById('hud-speed').innerText = Math.round(speedRaw * speedMultiplier);
+                } else {
+                    document.getElementById('hud-speed').innerText = "--";
+                }
+
                 let heading = 0;
                 if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) {
                     heading = pos.coords.heading; 
@@ -325,34 +502,67 @@
 
                 document.getElementById('map').style.transform = `rotate(${-heading}deg)`;
 
-                if (currentStepIndex < selectedSteps.length - 1) {
-                    const nextStep = selectedSteps[currentStepIndex + 1];
-                    const nextLatLng = [nextStep.maneuver.location[1], nextStep.maneuver.location[0]];
-                    const distToNextTurn = map.distance(currentLatLng, nextLatLng);
-                    document.getElementById('hud-distance').innerText = `in ${Math.round(distToNextTurn)} meters`;
-
-                    if (distToNextTurn < 30) {
-                        currentStepIndex++;
-                        document.getElementById('hud-instruction').innerText = parseInstruction(selectedSteps[currentStepIndex]);
+                if (!isRerouting) {
+                    let closestDistToRoute = Infinity;
+                    for (let i = 0; i < selectedRouteCoords.length; i++) {
+                        let d = map.distance(currentLatLng, selectedRouteCoords[i]);
+                        if (d < closestDistToRoute) closestDistToRoute = d;
                     }
-                } else {
-                    document.getElementById('hud-instruction').innerText = "DESTINATION REACHED.";
-                    document.getElementById('hud-distance').innerText = "";
+
+                    if (closestDistToRoute > 30) {
+                        triggerReroute(currentLatLng);
+                        return; 
+                    }
+
+                    const selectedSteps = allRoutesData[selectedRouteIndex].legs[0].steps;
+                    if (currentStepIndex < selectedSteps.length - 1) {
+                        const nextStep = selectedSteps[currentStepIndex + 1];
+                        const nextLatLng = [nextStep.maneuver.location[1], nextStep.maneuver.location[0]];
+                        const distToNextTurn = map.distance(currentLatLng, nextLatLng);
+                        
+                        document.getElementById('hud-distance').innerText = formatDistance(distToNextTurn);
+
+                        let remainingDist = distToNextTurn;
+                        for (let i = currentStepIndex + 1; i < selectedSteps.length; i++) {
+                            remainingDist += selectedSteps[i].distance;
+                        }
+                        
+                        const totalDist = allRoutesData[selectedRouteIndex].distance;
+                        const totalDur = Math.max(1, allRoutesData[selectedRouteIndex].duration);
+                        const avgSpeed = totalDist / totalDur; 
+                        const remainingTimeSecs = remainingDist / avgSpeed;
+
+                        document.getElementById('hud-eta').innerText = `${formatTime(remainingTimeSecs)} | ${formatDistance(remainingDist)}`;
+
+                        // Trigger next instruction if within 30 meters
+                        if (distToNextTurn < 30) {
+                            currentStepIndex++;
+                            updateInstruction(parseInstruction(selectedSteps[currentStepIndex]));
+                        }
+                    } else {
+                        updateInstruction("DESTINATION REACHED.");
+                        document.getElementById('hud-distance').innerText = "--";
+                        document.getElementById('hud-eta').innerText = "--";
+                    }
                 }
 
             }, (err) => {
-                document.getElementById('hud-distance').innerText = "GPS Signal Lost";
+                document.getElementById('hud-distance').innerText = "Signal Lost";
             }, { enableHighAccuracy: true, maximumAge: 0 });
         }
 
         function exitNavigation() {
             if (watchId) navigator.geolocation.clearWatch(watchId);
+            window.speechSynthesis.cancel(); // Stop talking
             document.getElementById('ui-panel').style.display = 'block';
             document.getElementById('drive-hud').style.display = 'none';
             document.body.classList.remove('driving');
             document.getElementById('map').style.transform = 'rotate(0deg)'; 
             if (trackerMarker) map.removeLayer(trackerMarker);
-            renderRoutes(); // Recenter map on the selected routes
+            isRerouting = false;
+            document.getElementById('hud-instruction').classList.remove('hud-rerouting');
+            document.getElementById('hud-speed').innerText = "--";
+            renderRoutes(); 
         }
     </script>
 </body>
