@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Maps Navigation</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Base Dark Theme Variables */
+        :root { 
+            --bg: #000000; --fg: #ffffff; --accent: #ea1b23; 
+            --ui-bg: rgba(0, 0, 0, 0.85); --border: #333333; 
+            --dim-route: #444444;
+        }
+
+        /* Light Theme Variables */
+        body.light-mode {
+            --bg: #ffffff; --fg: #000000; 
+            --ui-bg: rgba(255, 255, 255, 0.85); --border: #cccccc;
+            --dim-route: #bbbbbb;
+        }
+
+        body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: 'Space Mono', monospace; overflow: hidden; transition: background 0.3s, color 0.3s; }
+        
+        #map-wrapper { width: 100vw; height: 100vh; overflow: hidden; position: relative; background: var(--bg); transition: background 0.3s; }
+        #map { width: 150vw; height: 150vh; position: absolute; top: -25vh; left: -25vw; background: var(--bg); transition: transform 0.5s ease-out; }
+
+        .leaflet-control-zoom { display: none; }
+        .leaflet-control-attribution { background: var(--bg) !important; color: #555 !important; font-family: 'Space Mono', monospace; font-size: 0.7rem; transition: background 0.3s; }
+
+        #ui-panel { position: absolute; top: 20px; left: 20px; z-index: 1000; background: var(--ui-bg); border: 1px solid var(--border); padding: 20px; width: 320px; backdrop-filter: blur(10px); transition: opacity 0.3s, background 0.3s, border-color 0.3s; }
+        
+        #drive-hud { display: none; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: var(--ui-bg); border: 1px solid var(--border); border-bottom: 3px solid var(--accent); padding: 20px; width: 80%; max-width: 500px; text-align: center; backdrop-filter: blur(10px); transition: background 0.3s, border-color 0.3s; }
+        
+        .header-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; }
+        h1 { font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2px; margin: 0; padding-bottom: 5px; }
+        h2 { font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; margin: 0; }
+        .dot { color: var(--accent); }
+
+        .input-group { display: flex; gap: 10px; margin-bottom: 12px; }
+        input { width: 100%; box-sizing: border-box; background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 12px; font-family: 'Space Mono', monospace; outline: none; transition: border 0.3s, color 0.3s; }
+        .input-group input { margin-bottom: 0; }
+        input:focus { border-color: var(--accent); }
+        input::placeholder { color: #888; }
+        
+        button { background: var(--fg); color: var(--bg); border: none; padding: 12px; font-family: 'Space Mono', monospace; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: 0.3s; width: 100%; margin-top: 5px; }
+        button:hover { background: var(--accent); color: var(--fg); }
+
+        .btn-icon { width: auto; padding: 0 10px; font-size: 1.2rem; background: transparent; color: var(--fg); border: 1px solid var(--border); margin-top: 0; }
+        .btn-icon:hover { color: var(--accent); border-color: var(--accent); background: transparent; }
+
+        #status-container { margin-top: 15px; }
+        #status { font-size: 0.8rem; color: #888; text-transform: lowercase; margin-bottom: 5px; }
+        #stats { font-size: 0.85rem; color: var(--accent); font-weight: bold; text-transform: lowercase; margin-bottom: 10px; }
+
+        /* Route Options UI */
+        #route-options { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+        .route-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 8px; font-size: 0.8rem; text-align: left; text-transform: lowercase; font-weight: normal; }
+        .route-btn.selected { border-color: var(--accent); color: var(--accent); font-weight: bold; }
+        .route-btn:hover { border-color: var(--accent); background: transparent; color: var(--accent); }
+
+        #hud-instruction { font-size: 1.6rem; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; }
+        #hud-distance { font-size: 1rem; color: var(--accent); }
+        #btn-exit-nav { background: transparent; border: 1px solid var(--border); color: var(--fg); margin-top: 15px; width: auto; padding: 8px 20px; font-size: 0.8rem; }
+        #btn-exit-nav:hover { border-color: var(--accent); }
+        
+        .driving .leaflet-control-container { display: none; }
+        .chevron-icon { color: var(--fg); font-size: 24px; text-align: center; line-height: 24px; font-weight: bold; text-shadow: 0 0 3px var(--bg); transition: color 0.3s; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <div id="view-main">
+            <div class="header-row">
+                <h1>MAPS<span class="dot">.</span></h1>
+                <button class="btn-icon" onclick="toggleSettings()" title="Settings">⚙</button>
+            </div>
+            
+            <div class="input-group">
+                <input type="text" id="start" placeholder="origin...">
+                <button class="btn-icon" onclick="useCurrentLocation()" title="Use Current GPS">⌖</button>
+            </div>
+            <input type="text" id="end" placeholder="destination..." style="margin-bottom: 12px;">
+            <button onclick="getDirections()" id="btn-nav">Calculate Route</button>
+            
+            <div id="status-container">
+                <div id="status">ready.</div>
+                <div id="route-options"></div>
+                <div id="stats"></div>
+            </div>
+
+            <button onclick="startNavigation()" id="btn-sim" style="display:none; background: var(--accent); color: #fff;">Start Drive</button>
+        </div>
+
+        <div id="view-settings" style="display: none;">
+            <div class="header-row">
+                <h2>SETTINGS<span class="dot">.</span></h2>
+                <button class="btn-icon" onclick="toggleSettings()" title="Close Settings">✕</button>
+            </div>
+            <button onclick="toggleTheme()" id="btn-theme" style="background: transparent; border: 1px solid var(--border); color: var(--fg);">Switch to Light Mode</button>
+        </div>
+    </div>
+
+    <div id="drive-hud">
+        <div id="hud-instruction">Proceed to Route</div>
+        <div id="hud-distance">Tracking GPS...</div>
+        <button id="btn-exit-nav" onclick="exitNavigation()">End Drive</button>
+    </div>
+
+    <div id="map-wrapper">
+        <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        const map = L.map('map', { zoomControl: false }).setView([51.505, -0.09], 13);
+        let isLightMode = false;
+        
+        const tilesDark = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+        const tilesLight = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+        let mapLayer = L.tileLayer(tilesDark, { attribution: '&copy; CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+
+        let allRoutesData = [];
+        let routePolylines = [];
+        let selectedRouteIndex = 0;
+        let markers = [];
+        let trackerMarker = null;
+        let watchId = null;
+        let currentStepIndex = 0;
+        let lastPos = null;
+
+        const setStatus = (msg) => document.getElementById('status').innerText = msg;
+        const setStats = (msg) => document.getElementById('stats').innerText = msg;
+
+        function toggleSettings() {
+            const mainView = document.getElementById('view-main');
+            const settingsView = document.getElementById('view-settings');
+            mainView.style.display = mainView.style.display === 'none' ? 'block' : 'none';
+            settingsView.style.display = settingsView.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function toggleTheme() {
+            isLightMode = !isLightMode;
+            document.body.classList.toggle('light-mode');
+            map.removeLayer(mapLayer);
+            mapLayer = L.tileLayer(isLightMode ? tilesLight : tilesDark, { attribution: '&copy; CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+            document.getElementById('btn-theme').innerText = isLightMode ? "Switch to Dark Mode" : "Switch to Light Mode";
+            if (allRoutesData.length > 0) renderRoutes(); // Redraw lines to fix dim colors
+        }
+
+        function useCurrentLocation() {
+            setStatus("acquiring satellite lock...");
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition((position) => {
+                    const lat = position.coords.latitude.toFixed(5);
+                    const lon = position.coords.longitude.toFixed(5);
+                    document.getElementById('start').value = `${lat}, ${lon}`;
+                    map.setView([lat, lon], 14);
+                    setStatus("location acquired.");
+                }, () => setStatus("error: location access denied."), { enableHighAccuracy: true });
+            } else { setStatus("error: geolocation unsupported."); }
+        }
+
+        async function geocode(query) {
+            const isCoord = query.match(/^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/);
+            if (isCoord) return { lat: parseFloat(isCoord[1]), lon: parseFloat(isCoord[2]) };
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            if (data.length === 0) throw new Error(`could not locate: ${query}`);
+            return { lat: data[0].lat, lon: data[0].lon };
+        }
+
+        function parseInstruction(step) {
+            const man = step.maneuver;
+            let text = `${man.type} ${man.modifier || ''}`.trim();
+            if (man.type === 'depart') text = `Head ${man.modifier || 'straight'}`;
+            if (man.type === 'arrive') text = `Arrive at destination`;
+            if (step.name) text += ` onto ${step.name}`;
+            return text;
+        }
+
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            return h > 0 ? `${h}h ${m}m` : `${m}m`;
+        }
+
+        async function getDirections() {
+            const startQuery = document.getElementById('start').value;
+            const endQuery = document.getElementById('end').value;
+            if (!startQuery || !endQuery) { setStatus("error: missing parameters."); return; }
+
+            setStatus("calculating vectors...");
+            document.getElementById('btn-sim').style.display = 'none';
+            document.getElementById('route-options').innerHTML = '';
+            setStats('');
+            
+            try {
+                const startCoords = await geocode(startQuery);
+                const endCoords = await geocode(endQuery);
+
+                // Added alternatives=true to request multiple routes
+                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startCoords.lon},${startCoords.lat};${endCoords.lon},${endCoords.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`;
+                const res = await fetch(osrmUrl);
+                const data = await res.json();
+
+                if (data.routes.length === 0) throw new Error("no valid route found.");
+
+                allRoutesData = data.routes;
+                selectedRouteIndex = 0; // Default to fastest
+                
+                // Set start/end markers
+                markers.forEach(m => map.removeLayer(m));
+                markers = [];
+                const markerOpts = { radius: 5, color: '#ea1b23', fillColor: '#ea1b23', fillOpacity: 1, weight: 2 };
+                markers.push(L.circleMarker([startCoords.lat, startCoords.lon], markerOpts).addTo(map));
+                markers.push(L.circleMarker([endCoords.lat, endCoords.lon], markerOpts).addTo(map));
+
+                renderRoutes();
+                
+                setStatus(`${allRoutesData.length} route(s) established.`);
+                document.getElementById('btn-sim').style.display = 'block';
+            } catch (err) { setStatus(err.message); }
+        }
+
+        function renderRoutes() {
+            // Clear existing lines
+            routePolylines.forEach(p => map.removeLayer(p));
+            routePolylines = [];
+            const optionsContainer = document.getElementById('route-options');
+            optionsContainer.innerHTML = '';
+
+            const dimColor = isLightMode ? '#bbbbbb' : '#444444';
+
+            // Draw routes. Draw unselected first so selected renders on top.
+            allRoutesData.forEach((route, index) => {
+                const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+                const isSelected = index === selectedRouteIndex;
+                
+                const polyline = L.polyline(coords, { 
+                    color: isSelected ? '#ea1b23' : dimColor, 
+                    weight: isSelected ? 5 : 4, 
+                    opacity: isSelected ? 1 : 0.6,
+                    interactive: true
+                }).addTo(map);
+
+                // Allow clicking map lines to select route
+                polyline.on('click', () => selectRoute(index));
+                routePolylines.push(polyline);
+
+                // Build UI Buttons
+                const timeStr = formatTime(route.duration);
+                const distStr = (route.distance / 1000).toFixed(1) + 'km';
+                
+                const btn = document.createElement('button');
+                btn.className = `route-btn ${isSelected ? 'selected' : ''}`;
+                btn.innerText = `route ${index + 1}: ${timeStr} (${distStr})`;
+                btn.onclick = () => selectRoute(index);
+                optionsContainer.appendChild(btn);
+
+                if (isSelected) {
+                    setStats(`est: ${timeStr} | dist: ${distStr}`);
+                    polyline.bringToFront(); // Force Leaflet to draw this line on top
+                }
+            });
+
+            // Auto-zoom to fit all routes
+            const group = new L.featureGroup(routePolylines);
+            map.fitBounds(group.getBounds(), { padding: [50, 50] });
+        }
+
+        function selectRoute(index) {
+            selectedRouteIndex = index;
+            renderRoutes(); // Redraw to update colors and UI
+        }
+
+        // --- Navigation ---
+        function calculateBearing(lat1, lon1, lat2, lon2) {
+            const toRad = deg => (deg * Math.PI) / 180;
+            const toDeg = rad => (rad * 180) / Math.PI;
+            const dLon = toRad(lon2 - lon1);
+            lat1 = toRad(lat1); lat2 = toRad(lat2);
+            const y = Math.sin(dLon) * Math.cos(lat2);
+            const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+            return (toDeg(Math.atan2(y, x)) + 360) % 360;
+        }
+
+        function startNavigation() {
+            if (allRoutesData.length === 0 || !("geolocation" in navigator)) return;
+
+            // Grab the specific steps from the selected route
+            const selectedSteps = allRoutesData[selectedRouteIndex].legs[0].steps;
+
+            document.getElementById('ui-panel').style.display = 'none';
+            document.getElementById('drive-hud').style.display = 'block';
+            document.body.classList.add('driving'); 
+            
+            currentStepIndex = 0;
+            document.getElementById('hud-instruction').innerText = parseInstruction(selectedSteps[currentStepIndex]);
+
+            if (trackerMarker) map.removeLayer(trackerMarker);
+            const chevronIcon = L.divIcon({ html: '<div class="chevron-icon">▲</div>', className: '', iconSize: [24, 24], iconAnchor: [12, 12] });
+            trackerMarker = L.marker([0,0], { icon: chevronIcon }).addTo(map);
+
+            watchId = navigator.geolocation.watchPosition((pos) => {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                const currentLatLng = [lat, lon];
+                
+                trackerMarker.setLatLng(currentLatLng);
+                map.setView(currentLatLng, 18); 
+                
+                let heading = 0;
+                if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) {
+                    heading = pos.coords.heading; 
+                } else if (lastPos) {
+                    heading = calculateBearing(lastPos.lat, lastPos.lon, lat, lon); 
+                }
+                lastPos = {lat, lon};
+
+                document.getElementById('map').style.transform = `rotate(${-heading}deg)`;
+
+                if (currentStepIndex < selectedSteps.length - 1) {
+                    const nextStep = selectedSteps[currentStepIndex + 1];
+                    const nextLatLng = [nextStep.maneuver.location[1], nextStep.maneuver.location[0]];
+                    const distToNextTurn = map.distance(currentLatLng, nextLatLng);
+                    document.getElementById('hud-distance').innerText = `in ${Math.round(distToNextTurn)} meters`;
+
+                    if (distToNextTurn < 30) {
+                        currentStepIndex++;
+                        document.getElementById('hud-instruction').innerText = parseInstruction(selectedSteps[currentStepIndex]);
+                    }
+                } else {
+                    document.getElementById('hud-instruction').innerText = "DESTINATION REACHED.";
+                    document.getElementById('hud-distance').innerText = "";
+                }
+
+            }, (err) => {
+                document.getElementById('hud-distance').innerText = "GPS Signal Lost";
+            }, { enableHighAccuracy: true, maximumAge: 0 });
+        }
+
+        function exitNavigation() {
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+            document.getElementById('ui-panel').style.display = 'block';
+            document.getElementById('drive-hud').style.display = 'none';
+            document.body.classList.remove('driving');
+            document.getElementById('map').style.transform = 'rotate(0deg)'; 
+            if (trackerMarker) map.removeLayer(trackerMarker);
+            renderRoutes(); // Recenter map on the selected routes
+        }
+    </script>
+</body>
+</html>
