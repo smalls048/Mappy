@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="https://smalls048.github.io/Mappy/assets/mappyico.ico">
-
+    
     <style>
         :root { 
             --bg: #000000; --fg: #ffffff; --accent: #ea1b23; 
@@ -56,7 +56,6 @@
         input:focus { border-color: var(--accent); }
         input::placeholder { color: #888; }
         
-        /* Autocomplete Dropdown Styles */
         .autocomplete-list { 
             position: absolute; top: 100%; left: 0; right: 0; background: var(--bg); border: 1px solid var(--border); 
             border-top: none; z-index: 1001; max-height: 150px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: none;
@@ -84,10 +83,14 @@
         .route-btn.selected { border-color: var(--accent); color: var(--accent); font-weight: bold; }
         .route-btn:hover { border-color: var(--accent); background: transparent; color: var(--accent); }
 
-        /* HUD Styles including Speedometer */
         #hud-instruction { font-size: 1.6rem; font-weight: bold; margin: 0 0 5px 0; text-transform: uppercase; transition: color 0.3s; }
         .hud-rerouting { color: var(--accent); animation: pulse 1s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        /* --- NEW: Lane Guidance Styles --- */
+        #hud-lanes { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; font-size: 1.8rem; font-weight: bold; }
+        .lane { color: #555555; } /* Invalid lane (dim) */
+        .lane.valid { color: var(--accent); text-shadow: 0 0 5px rgba(234, 27, 35, 0.5); } /* Valid lane (red & glowing) */
 
         .hud-metrics { display: flex; justify-content: space-around; align-items: center; margin-bottom: 10px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 5px 0; }
         .metric-box { display: flex; flex-direction: column; }
@@ -156,8 +159,7 @@
 
     <div id="drive-hud">
         <div id="hud-instruction">Proceed to Route</div>
-        
-        <div class="hud-metrics">
+        <div id="hud-lanes"></div> <div class="hud-metrics">
             <div class="metric-box">
                 <span id="hud-speed" class="metric-val">--</span>
                 <span class="metric-label">Speed</span>
@@ -184,9 +186,7 @@
     <script>
         // --- Core State ---
         const map = L.map('map', { zoomControl: false }).setView([51.505, -0.09], 13);
-        let isLightMode = false;
-        let useImperial = false; 
-        let useVoice = true;
+        let isLightMode = false, useImperial = false, useVoice = true;
         
         const tilesDark = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
         const tilesLight = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
@@ -200,16 +200,13 @@
         const setStatus = (msg) => document.getElementById('status').innerText = msg;
         const setStats = (msg) => document.getElementById('stats').innerText = msg;
 
-        // --- FEATURE 1: Auto Day/Night Switcher ---
-        // Checks OS preference on load
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-            toggleTheme(); 
-        }
+        // --- Auto Day/Night Switcher ---
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) toggleTheme(); 
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
             if ((event.matches && isLightMode) || (!event.matches && !isLightMode)) toggleTheme();
         });
 
-        // --- FEATURE 2: Search Autocomplete ---
+        // --- Search Autocomplete ---
         function setupAutocomplete(inputId, listId) {
             const input = document.getElementById(inputId);
             const list = document.getElementById(listId);
@@ -219,7 +216,6 @@
                 clearTimeout(debounceTimer);
                 const query = input.value;
                 if (query.length < 3) { list.style.display = 'none'; return; }
-                
                 debounceTimer = setTimeout(async () => {
                     try {
                         const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=4`);
@@ -229,43 +225,38 @@
                             data.forEach(item => {
                                 const div = document.createElement('div');
                                 div.className = 'autocomplete-item';
-                                // Slice the display name so it's not massively long
                                 div.innerText = item.display_name.split(',').slice(0,3).join(',');
-                                div.onclick = () => {
-                                    input.value = div.innerText;
-                                    list.style.display = 'none';
-                                };
+                                div.onclick = () => { input.value = div.innerText; list.style.display = 'none'; };
                                 list.appendChild(div);
                             });
                             list.style.display = 'block';
-                        } else {
-                            list.style.display = 'none';
-                        }
+                        } else list.style.display = 'none';
                     } catch (e) { console.error("Autocomplete error", e); }
-                }, 500); // 500ms delay protects against rate-limiting
+                }, 500); 
             });
-
-            // Hide dropdown if clicked outside
-            document.addEventListener('click', (e) => {
-                if (e.target !== input && e.target !== list) list.style.display = 'none';
-            });
+            document.addEventListener('click', (e) => { if (e.target !== input && e.target !== list) list.style.display = 'none'; });
         }
         setupAutocomplete('start', 'start-autocomplete');
         setupAutocomplete('end', 'end-autocomplete');
 
-        // --- FEATURE 3: Voice Navigation (TTS) ---
+        // --- Voice Navigation (TTS) & iOS Fix ---
+        function unlockAudioForIOS() {
+            // iOS Safari requires SpeechSynthesis to be initialized during a direct user interaction
+            if (useVoice && 'speechSynthesis' in window) {
+                const unlockMsg = new SpeechSynthesisUtterance('');
+                unlockMsg.volume = 0; // Silent
+                window.speechSynthesis.speak(unlockMsg);
+            }
+        }
+
         function speakInstruction(text) {
             if (!useVoice || !('speechSynthesis' in window)) return;
-            window.speechSynthesis.cancel(); // Interrupt current speech
-            
-            // Filter out minor directions like "Continue straight" to prevent spam
+            window.speechSynthesis.cancel(); 
             if (text.toLowerCase().includes("head ") || text.toLowerCase().includes("continue")) return; 
-
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.rate = 1.0; 
             window.speechSynthesis.speak(utterance);
         }
-
 
         // --- UI & Settings Logic ---
         function toggleSettings() {
@@ -313,9 +304,49 @@
             return h > 0 ? `${h}h ${m}m` : `${m}m`;
         }
 
-        function updateInstruction(text) {
+        function parseInstruction(step) {
+            const man = step.maneuver;
+            let text = `${man.type} ${man.modifier || ''}`.trim();
+            if (man.type === 'depart') text = `Head ${man.modifier || 'straight'}`;
+            if (man.type === 'arrive') text = `Arrive at destination`;
+            if (step.name) text += ` onto ${step.name}`;
+            return text;
+        }
+
+        // --- NEW: Lane Guidance Parser ---
+        function parseLanes(step) {
+            if (!step.intersections) return "";
+            
+            // Look for the first intersection in this step that actually has lane data
+            for (let i = 0; i < step.intersections.length; i++) {
+                const lanes = step.intersections[i].lanes;
+                if (lanes && lanes.length > 0) {
+                    let html = "";
+                    lanes.forEach(lane => {
+                        let arrow = "↑"; // Default straight
+                        const ind = lane.indications ? lane.indications[0].toLowerCase() : "";
+                        
+                        if (ind.includes("left")) arrow = ind.includes("slight") ? "↖" : "↰";
+                        else if (ind.includes("right")) arrow = ind.includes("slight") ? "↗" : "↱";
+                        else if (ind.includes("uturn")) arrow = "⤻";
+
+                        // Apply the .valid class if this lane is allowed for our route
+                        html += `<span class="lane ${lane.valid ? 'valid' : ''}">${arrow}</span>`;
+                    });
+                    return html;
+                }
+            }
+            return ""; // No lane data available for this step
+        }
+
+        function updateHUD(step) {
+            const text = parseInstruction(step);
             document.getElementById('hud-instruction').innerText = text;
-            speakInstruction(text); // Speak the new instruction
+            
+            // Update the new lane visualizer
+            document.getElementById('hud-lanes').innerHTML = parseLanes(step);
+            
+            speakInstruction(text); 
         }
 
         // --- Core App Logic ---
@@ -339,15 +370,6 @@
             const data = await res.json();
             if (data.length === 0) throw new Error(`could not locate: ${query}`);
             return { lat: data[0].lat, lon: data[0].lon };
-        }
-
-        function parseInstruction(step) {
-            const man = step.maneuver;
-            let text = `${man.type} ${man.modifier || ''}`.trim();
-            if (man.type === 'depart') text = `Head ${man.modifier || 'straight'}`;
-            if (man.type === 'arrive') text = `Arrive at destination`;
-            if (step.name) text += ` onto ${step.name}`;
-            return text;
         }
 
         async function getDirections() {
@@ -394,7 +416,6 @@
             allRoutesData.forEach((route, index) => {
                 const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
                 const isSelected = index === selectedRouteIndex;
-                
                 const polyline = L.polyline(coords, { color: isSelected ? '#ea1b23' : dimColor, weight: isSelected ? 5 : 4, opacity: isSelected ? 1 : 0.6, interactive: true }).addTo(map);
 
                 polyline.on('click', () => selectRoute(index));
@@ -402,7 +423,6 @@
 
                 const timeStr = formatTime(route.duration);
                 const distStr = formatDistance(route.distance);
-                
                 const btn = document.createElement('button');
                 btn.className = `route-btn ${isSelected ? 'selected' : ''}`;
                 btn.innerText = `route ${index + 1}: ${timeStr} (${distStr})`;
@@ -439,9 +459,9 @@
 
         async function triggerReroute(currentLatLng) {
             isRerouting = true;
-            const hudInst = document.getElementById('hud-instruction');
-            hudInst.innerText = "REROUTING...";
-            hudInst.classList.add('hud-rerouting');
+            document.getElementById('hud-instruction').innerText = "REROUTING...";
+            document.getElementById('hud-instruction').classList.add('hud-rerouting');
+            document.getElementById('hud-lanes').innerHTML = ""; // Clear lanes while rerouting
             document.getElementById('hud-distance').innerText = "calculating...";
             document.getElementById('hud-eta').innerText = "--";
             speakInstruction("Rerouting");
@@ -455,8 +475,10 @@
                     allRoutesData = data.routes;
                     currentStepIndex = 0; 
                     selectRoute(0);       
-                    hudInst.classList.remove('hud-rerouting');
-                    updateInstruction(parseInstruction(allRoutesData[0].legs[0].steps[0]));
+                    document.getElementById('hud-instruction').classList.remove('hud-rerouting');
+                    
+                    // Update HUD with the new first step (text and lanes)
+                    updateHUD(allRoutesData[0].legs[0].steps[0]);
                 }
             } catch (err) { console.error("Reroute failed", err); }
             isRerouting = false;
@@ -465,12 +487,18 @@
         function startNavigation() {
             if (allRoutesData.length === 0 || !("geolocation" in navigator)) return;
 
+            // --- iOS AUDIO FIX ---
+            // Triggered exactly when the user taps the button
+            unlockAudioForIOS();
+
             document.getElementById('ui-panel').style.display = 'none';
             document.getElementById('drive-hud').style.display = 'block';
             document.body.classList.add('driving'); 
             
             currentStepIndex = 0;
-            updateInstruction(parseInstruction(allRoutesData[selectedRouteIndex].legs[0].steps[currentStepIndex]));
+            
+            // Push initial step to HUD (Text and Lanes)
+            updateHUD(allRoutesData[selectedRouteIndex].legs[0].steps[currentStepIndex]);
 
             if (trackerMarker) map.removeLayer(trackerMarker);
             const chevronIcon = L.divIcon({ html: '<div class="chevron-icon">▲</div>', className: '', iconSize: [24, 24], iconAnchor: [12, 12] });
@@ -479,15 +507,14 @@
             watchId = navigator.geolocation.watchPosition((pos) => {
                 const lat = pos.coords.latitude;
                 const lon = pos.coords.longitude;
-                const speedRaw = pos.coords.speed; // meters per second
+                const speedRaw = pos.coords.speed; 
                 const currentLatLng = [lat, lon];
                 
                 trackerMarker.setLatLng(currentLatLng);
                 map.setView(currentLatLng, 18); 
                 
-                // --- FEATURE 4: Live Speedometer ---
                 if (speedRaw !== null && !isNaN(speedRaw)) {
-                    const speedMultiplier = useImperial ? 2.23694 : 3.6; // m/s to mph OR km/h
+                    const speedMultiplier = useImperial ? 2.23694 : 3.6; 
                     document.getElementById('hud-speed').innerText = Math.round(speedRaw * speedMultiplier);
                 } else {
                     document.getElementById('hud-speed').innerText = "--";
@@ -535,13 +562,15 @@
 
                         document.getElementById('hud-eta').innerText = `${formatTime(remainingTimeSecs)} | ${formatDistance(remainingDist)}`;
 
-                        // Trigger next instruction if within 30 meters
+                        // Move to next step if close enough
                         if (distToNextTurn < 30) {
                             currentStepIndex++;
-                            updateInstruction(parseInstruction(selectedSteps[currentStepIndex]));
+                            // Feed the whole step object so we get both Voice, Text, and Lane visualizer
+                            updateHUD(selectedSteps[currentStepIndex]);
                         }
                     } else {
-                        updateInstruction("DESTINATION REACHED.");
+                        document.getElementById('hud-instruction').innerText = "DESTINATION REACHED.";
+                        document.getElementById('hud-lanes').innerHTML = ""; // Clear lanes at end
                         document.getElementById('hud-distance').innerText = "--";
                         document.getElementById('hud-eta').innerText = "--";
                     }
@@ -554,7 +583,7 @@
 
         function exitNavigation() {
             if (watchId) navigator.geolocation.clearWatch(watchId);
-            window.speechSynthesis.cancel(); // Stop talking
+            window.speechSynthesis.cancel(); 
             document.getElementById('ui-panel').style.display = 'block';
             document.getElementById('drive-hud').style.display = 'none';
             document.body.classList.remove('driving');
@@ -562,6 +591,7 @@
             if (trackerMarker) map.removeLayer(trackerMarker);
             isRerouting = false;
             document.getElementById('hud-instruction').classList.remove('hud-rerouting');
+            document.getElementById('hud-lanes').innerHTML = "";
             document.getElementById('hud-speed').innerText = "--";
             renderRoutes(); 
         }
