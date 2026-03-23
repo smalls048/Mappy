@@ -3,22 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Minimal Maps Navigation</title>
+    <title>Minimal Maps Pro</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/x-icon" href="https://smalls048.github.io/Mappy/assets/mappyico.ico">
     
     <style>
-        :root { 
-            --bg: #000000; --fg: #ffffff; --accent: #ea1b23; 
-            --ui-bg: rgba(0, 0, 0, 0.85); --border: #333333; --dim-route: #444444;
-        }
-
-        body.light-mode {
-            --bg: #ffffff; --fg: #000000; 
-            --ui-bg: rgba(255, 255, 255, 0.85); --border: #cccccc; --dim-route: #bbbbbb;
-        }
+        :root { --bg: #000000; --fg: #ffffff; --accent: #ea1b23; --ui-bg: rgba(0, 0, 0, 0.85); --border: #333333; --dim-route: #444444; }
+        body.light-mode { --bg: #ffffff; --fg: #000000; --ui-bg: rgba(255, 255, 255, 0.85); --border: #cccccc; --dim-route: #bbbbbb; }
 
         body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: 'Space Mono', monospace; overflow: hidden; transition: background 0.3s, color 0.3s; }
         
@@ -28,66 +21,65 @@
         .leaflet-control-zoom { display: none; }
         .leaflet-control-attribution { background: var(--bg) !important; color: #555 !important; font-family: 'Space Mono', monospace; font-size: 0.7rem; transition: background 0.3s; }
 
-        #ui-panel { 
-            position: absolute; top: 20px; left: 20px; z-index: 1000; background: var(--ui-bg); border: 1px solid var(--border); 
-            padding: 20px; width: 320px; backdrop-filter: blur(10px); transition: opacity 0.3s, background 0.3s, border-color 0.3s; box-sizing: border-box;
-        }
+        .panel { position: absolute; z-index: 1000; background: var(--ui-bg); border: 1px solid var(--border); backdrop-filter: blur(10px); box-sizing: border-box; transition: 0.3s; }
         
-        #drive-hud { 
-            display: none; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: var(--ui-bg); 
-            border: 1px solid var(--border); border-bottom: 3px solid var(--accent); padding: 20px; width: 80%; max-width: 500px; 
-            text-align: center; backdrop-filter: blur(10px); transition: background 0.3s, border-color 0.3s; box-sizing: border-box;
-        }
+        #ui-panel { top: 20px; left: 20px; padding: 20px; width: 320px; }
+        #drive-hud { display: none; top: 20px; left: 50%; transform: translateX(-50%); border-bottom: 3px solid var(--accent); padding: 15px 20px; width: 80%; max-width: 500px; text-align: center; }
         
+        /* Itinerary Panel */
+        #itinerary-panel { display: none; top: 20px; right: 20px; padding: 20px; width: 320px; max-height: 80vh; overflow-y: auto; border-top: 3px solid var(--accent); }
+        .itinerary-step { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; text-align: left; }
+        .itinerary-step:last-child { border-bottom: none; }
+        .itinerary-step.active { color: var(--accent); font-weight: bold; }
+
         @media (max-width: 768px) {
             #ui-panel { top: auto; bottom: 20px; left: 5%; width: 90%; max-height: 50vh; overflow-y: auto; box-shadow: 0 -10px 30px rgba(0,0,0,0.5); }
             #drive-hud { width: 90%; top: 10px; padding: 15px; }
+            #itinerary-panel { top: auto; bottom: 10px; left: 5%; width: 90%; max-height: 60vh; }
             #hud-instruction { font-size: 1.2rem !important; }
         }
 
-        .header-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; }
+        .header-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 15px; }
         h1 { font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2px; margin: 0; padding-bottom: 5px; }
-        h2 { font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; margin: 0; }
+        h2 { font-size: 1.2rem; text-transform: uppercase; margin: 0; }
         .dot { color: var(--accent); }
 
         .input-wrapper { position: relative; width: 100%; margin-bottom: 12px; }
         .input-group { display: flex; gap: 10px; width: 100%; }
-        input { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border); color: var(--fg); padding: 12px; font-family: 'Space Mono', monospace; outline: none; transition: border 0.3s, color 0.3s, background 0.3s; }
+        input { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border); color: var(--fg); padding: 12px; font-family: 'Space Mono', monospace; outline: none; transition: 0.3s; }
         input:focus { border-color: var(--accent); }
         input::placeholder { color: #888; }
         
-        .autocomplete-list { 
-            position: absolute; top: 100%; left: 0; right: 0; background: var(--bg); border: 1px solid var(--border); 
-            border-top: none; z-index: 1001; max-height: 150px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: none;
-        }
+        .autocomplete-list { position: absolute; top: 100%; left: 0; right: 0; background: var(--bg); border: 1px solid var(--border); border-top: none; z-index: 1001; max-height: 150px; overflow-y: auto; display: none; }
         .autocomplete-item { padding: 10px; font-size: 0.8rem; cursor: pointer; border-bottom: 1px solid var(--border); }
-        .autocomplete-item:last-child { border-bottom: none; }
         .autocomplete-item:hover { background: var(--border); color: var(--accent); }
 
         button { background: var(--fg); color: var(--bg); border: none; padding: 12px; font-family: 'Space Mono', monospace; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: 0.3s; width: 100%; margin-top: 5px; }
         button:hover { background: var(--accent); color: var(--fg); }
 
         .btn-icon { width: auto; padding: 0 10px; font-size: 1.2rem; background: transparent; color: var(--fg); border: 1px solid var(--border); margin-top: 0; }
-        .btn-icon:hover { color: var(--accent); border-color: var(--accent); background: transparent; }
+        .btn-icon:hover { color: var(--accent); border-color: var(--accent); }
 
         .settings-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 0.9rem; }
         .settings-row button { width: auto; padding: 5px 15px; font-size: 0.8rem; margin: 0; border: 1px solid var(--border); background: transparent; color: var(--fg); }
         .settings-row button:hover { border-color: var(--accent); color: var(--accent); }
 
         #status-container { margin-top: 15px; }
-        #status { font-size: 0.8rem; color: #888; text-transform: lowercase; margin-bottom: 5px; }
-        #stats { font-size: 0.85rem; color: var(--accent); font-weight: bold; text-transform: lowercase; margin-bottom: 10px; }
+        #status { font-size: 0.8rem; color: #888; margin-bottom: 5px; }
+        #stats { font-size: 0.85rem; color: var(--accent); font-weight: bold; margin-bottom: 10px; }
 
         #route-options { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
-        .route-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 12px; font-size: 0.8rem; text-align: left; text-transform: lowercase; font-weight: normal; }
+        .route-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 12px; font-size: 0.8rem; text-align: left; font-weight: normal; }
         .route-btn.selected { border-color: var(--accent); color: var(--accent); font-weight: bold; }
-        .route-btn:hover { border-color: var(--accent); background: transparent; color: var(--accent); }
 
-        #hud-instruction { font-size: 1.6rem; font-weight: bold; margin: 0 0 5px 0; text-transform: uppercase; transition: color 0.3s; }
+        /* HUD & Recenter Button */
+        #btn-recenter { display: none; position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; width: auto; padding: 12px 24px; background: var(--accent); color: #fff; border-radius: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        
+        #hud-instruction { font-size: 1.5rem; font-weight: bold; margin: 0 0 5px 0; text-transform: uppercase; transition: color 0.3s; }
         .hud-rerouting { color: var(--accent); animation: pulse 1s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-        #hud-lanes { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; font-size: 1.8rem; font-weight: bold; }
+        #hud-lanes { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; font-size: 1.5rem; font-weight: bold; }
         .lane { color: #555555; } 
         .lane.valid { color: var(--accent); text-shadow: 0 0 5px rgba(234, 27, 35, 0.5); } 
 
@@ -96,8 +88,9 @@
         .metric-val { font-size: 1.2rem; font-weight: bold; color: var(--accent); }
         .metric-label { font-size: 0.6rem; color: #888; text-transform: uppercase; letter-spacing: 1px; }
         
-        #btn-exit-nav { background: transparent; border: 1px solid var(--border); color: var(--fg); margin-top: 15px; width: auto; padding: 8px 20px; font-size: 0.8rem; }
-        #btn-exit-nav:hover { border-color: var(--accent); }
+        .hud-actions { display: flex; gap: 10px; margin-top: 10px; }
+        .hud-actions button { background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 8px; font-size: 0.8rem; margin: 0; }
+        .hud-actions button:hover { border-color: var(--accent); }
         
         .driving .leaflet-control-container { display: none; }
         .chevron-icon { color: var(--fg); font-size: 24px; text-align: center; line-height: 24px; font-weight: bold; text-shadow: 0 0 3px var(--bg); transition: color 0.3s; }
@@ -105,7 +98,7 @@
 </head>
 <body>
 
-    <div id="ui-panel">
+    <div id="ui-panel" class="panel">
         <div id="view-main">
             <div class="header-row">
                 <h1>MAPS<span class="dot">.</span></h1>
@@ -156,7 +149,7 @@
         </div>
     </div>
 
-    <div id="drive-hud">
+    <div id="drive-hud" class="panel">
         <div id="hud-instruction">Proceed to Route</div>
         <div id="hud-lanes"></div> 
         
@@ -175,8 +168,21 @@
             </div>
         </div>
 
-        <button id="btn-exit-nav" onclick="exitNavigation()">End Drive</button>
+        <div class="hud-actions">
+            <button onclick="toggleItinerary()" style="flex: 0 0 50px;">≡</button>
+            <button onclick="exitNavigation()" style="flex: 1;">End Route</button>
+        </div>
     </div>
+
+    <div id="itinerary-panel" class="panel">
+        <div class="header-row">
+            <h2>ITINERARY<span class="dot">.</span></h2>
+            <button class="btn-icon" onclick="toggleItinerary()">✕</button>
+        </div>
+        <div id="itinerary-list"></div>
+    </div>
+
+    <button id="btn-recenter" onclick="recenterMap()">⌖ RECENTER</button>
 
     <div id="map-wrapper">
         <div id="map"></div>
@@ -185,35 +191,50 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <script>
+        // --- Core State & Local Memory ---
         const map = L.map('map', { zoomControl: false }).setView([51.505, -0.09], 13);
         let isLightMode = false, useImperial = false, useVoice = true;
+        let isFreeLook = false; 
         
         const tilesDark = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
         const tilesLight = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-        let mapLayer = L.tileLayer(tilesDark, { attribution: '&copy; CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+        let mapLayer = L.tileLayer(tilesDark, { attribution: '&copy; CARTO', maxZoom: 20 }).addTo(map);
 
         let allRoutesData = [], routePolylines = [], selectedRouteIndex = 0;
         let selectedRouteCoords = [], globalEndCoords = null, markers = [];
         let trackerMarker = null, watchId = null, currentStepIndex = 0;
-        let lastPos = null, isRerouting = false;
-
-        // --- iOS Voice State Variables ---
-        let hasSpoken = false; 
-        let currentUtterance = null; // Stored globally to prevent Apple Garbage Collection
+        let lastPos = null, isRerouting = false, hasSpoken = false, currentUtterance = null;
 
         const setStatus = (msg) => document.getElementById('status').innerText = msg;
         const setStats = (msg) => document.getElementById('stats').innerText = msg;
 
-        // Pre-load iOS Safari Voices to prevent silent failures
+        // --- Load Settings from LocalStorage ---
+        try {
+            if(localStorage.getItem('minmap_light') === 'true') toggleTheme();
+            if(localStorage.getItem('minmap_imp') === 'true') toggleUnits();
+            if(localStorage.getItem('minmap_voice') === 'false') toggleVoice();
+        } catch(e) {} 
+
+        // --- iOS Voices ---
         if ('speechSynthesis' in window) {
             window.speechSynthesis.getVoices();
             window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
         }
 
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) toggleTheme(); 
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
-            if ((event.matches && isLightMode) || (!event.matches && !isLightMode)) toggleTheme();
+        // --- Smart Camera Detectors ---
+        map.on('dragstart', () => {
+            if (document.body.classList.contains('driving') && !isFreeLook) {
+                isFreeLook = true;
+                document.getElementById('btn-recenter').style.display = 'block';
+                document.getElementById('map').style.transform = 'rotate(0deg)'; 
+            }
         });
+
+        function recenterMap() {
+            isFreeLook = false;
+            document.getElementById('btn-recenter').style.display = 'none';
+            if (trackerMarker) map.panTo(trackerMarker.getLatLng()); 
+        }
 
         function setupAutocomplete(inputId, listId) {
             const input = document.getElementById(inputId);
@@ -222,11 +243,10 @@
 
             input.addEventListener('input', () => {
                 clearTimeout(debounceTimer);
-                const query = input.value;
-                if (query.length < 3) { list.style.display = 'none'; return; }
+                if (input.value.length < 3) { list.style.display = 'none'; return; }
                 debounceTimer = setTimeout(async () => {
                     try {
-                        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=4`);
+                        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input.value)}&limit=4`);
                         const data = await res.json();
                         list.innerHTML = '';
                         if(data.length > 0) {
@@ -239,7 +259,7 @@
                             });
                             list.style.display = 'block';
                         } else list.style.display = 'none';
-                    } catch (e) { console.error("Autocomplete error", e); }
+                    } catch (e) {}
                 }, 500); 
             });
             document.addEventListener('click', (e) => { if (e.target !== input && e.target !== list) list.style.display = 'none'; });
@@ -247,43 +267,51 @@
         setupAutocomplete('start', 'start-autocomplete');
         setupAutocomplete('end', 'end-autocomplete');
 
-        // --- NEW SAFARI TTS ENGINE ---
         function speakInstruction(text) {
             if (!useVoice || !('speechSynthesis' in window)) return;
-            
-            // CRITICAL iOS FIX: Only cancel IF audio has successfully played before
-            if (hasSpoken) {
-                window.speechSynthesis.cancel(); 
-            }
-            
+            if (hasSpoken) window.speechSynthesis.cancel(); 
             if (text.toLowerCase().includes("head ") || text.toLowerCase().includes("continue")) return; 
-            
             currentUtterance = new SpeechSynthesisUtterance(text);
-            currentUtterance.rate = 1.0; 
-            
-            // Mark the engine as successfully activated
             hasSpoken = true; 
             window.speechSynthesis.speak(currentUtterance);
         }
 
         function toggleSettings() {
-            const mainView = document.getElementById('view-main');
-            const settingsView = document.getElementById('view-settings');
-            mainView.style.display = mainView.style.display === 'none' ? 'block' : 'none';
-            settingsView.style.display = settingsView.style.display === 'none' ? 'block' : 'none';
+            const m = document.getElementById('view-main'), s = document.getElementById('view-settings');
+            m.style.display = m.style.display === 'none' ? 'block' : 'none';
+            s.style.display = s.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function toggleItinerary() {
+            const panel = document.getElementById('itinerary-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function populateItinerary(steps) {
+            const list = document.getElementById('itinerary-list');
+            list.innerHTML = '';
+            steps.forEach((step, idx) => {
+                const div = document.createElement('div');
+                div.className = `itinerary-step ${idx === currentStepIndex ? 'active' : ''}`;
+                div.id = `itin-step-${idx}`;
+                div.innerText = `${formatDistance(step.distance)} - ${parseInstruction(step)}`;
+                list.appendChild(div);
+            });
         }
 
         function toggleTheme() {
             isLightMode = !isLightMode;
             document.body.classList.toggle('light-mode');
             map.removeLayer(mapLayer);
-            mapLayer = L.tileLayer(isLightMode ? tilesLight : tilesDark, { attribution: '&copy; CARTO', subdomains: 'abcd', maxZoom: 20 }).addTo(map);
+            mapLayer = L.tileLayer(isLightMode ? tilesLight : tilesDark, { attribution: '&copy; CARTO', maxZoom: 20 }).addTo(map);
+            try { localStorage.setItem('minmap_light', isLightMode); } catch(e){}
             if (allRoutesData.length > 0) renderRoutes(); 
         }
 
         function toggleUnits() {
             useImperial = !useImperial;
             document.getElementById('btn-units').innerText = useImperial ? "Imperial (mi/mph)" : "Metric (km/kmh)";
+            try { localStorage.setItem('minmap_imp', useImperial); } catch(e){}
             if (allRoutesData.length > 0) renderRoutes(); 
         }
 
@@ -291,22 +319,20 @@
             useVoice = !useVoice;
             document.getElementById('btn-voice').innerText = useVoice ? "ON" : "OFF";
             document.getElementById('btn-voice').style.color = useVoice ? "var(--fg)" : "#888";
+            try { localStorage.setItem('minmap_voice', useVoice); } catch(e){}
         }
 
         function formatDistance(meters) {
             if (useImperial) {
                 const miles = meters * 0.000621371;
-                if (miles < 0.1) return Math.round(meters * 3.28084) + ' ft';
-                return miles.toFixed(1) + ' mi';
+                return miles < 0.1 ? Math.round(meters * 3.28084) + ' ft' : miles.toFixed(1) + ' mi';
             } else {
-                if (meters < 100) return Math.round(meters) + ' m';
-                return (meters / 1000).toFixed(1) + ' km';
+                return meters < 100 ? Math.round(meters) + ' m' : (meters / 1000).toFixed(1) + ' km';
             }
         }
 
-        function formatTime(seconds) {
-            const h = Math.floor(seconds / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
+        function formatTime(secs) {
+            const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
             return h > 0 ? `${h}h ${m}m` : `${m}m`;
         }
 
@@ -344,32 +370,37 @@
             document.getElementById('hud-instruction').innerText = text;
             document.getElementById('hud-lanes').innerHTML = parseLanes(step);
             speakInstruction(text); 
+            
+            // Sync Itinerary
+            document.querySelectorAll('.itinerary-step').forEach(el => el.classList.remove('active'));
+            const activeStep = document.getElementById(`itin-step-${currentStepIndex}`);
+            if(activeStep) {
+                activeStep.classList.add('active');
+                activeStep.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         }
 
-        function handleGPSError(err, outputTarget) {
+        function handleGPSError(err, target) {
+            const isHUD = target === 'hud';
             if (!window.isSecureContext) {
-                const msg = "error: ios requires https for gps.";
-                outputTarget === 'status' ? setStatus(msg) : document.getElementById('hud-distance').innerText = msg;
+                const msg = "error: apple requires https for gps.";
+                isHUD ? document.getElementById('hud-distance').innerText = msg : setStatus(msg);
             } else if (err.code === 1) {
-                const msg = "error: check ios settings > privacy > location.";
-                outputTarget === 'status' ? setStatus(msg) : document.getElementById('hud-distance').innerText = "Permission Denied";
+                isHUD ? document.getElementById('hud-distance').innerText = "Permission Denied" : setStatus("error: check ios privacy settings.");
             } else {
-                const msg = "error: weak gps signal.";
-                outputTarget === 'status' ? setStatus(msg) : document.getElementById('hud-distance').innerText = "Signal Lost";
+                isHUD ? document.getElementById('hud-distance').innerText = "Signal Lost" : setStatus("error: weak gps signal.");
             }
         }
 
         function useCurrentLocation() {
             setStatus("acquiring satellite lock...");
             if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition((position) => {
-                    const lat = position.coords.latitude.toFixed(5);
-                    const lon = position.coords.longitude.toFixed(5);
-                    document.getElementById('start').value = `${lat}, ${lon}`;
-                    map.setView([lat, lon], 14);
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    document.getElementById('start').value = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+                    map.setView([pos.coords.latitude, pos.coords.longitude], 14);
                     setStatus("location acquired.");
                 }, (err) => handleGPSError(err, 'status'), { enableHighAccuracy: true });
-            } else { setStatus("error: geolocation unsupported."); }
+            } else setStatus("error: geolocation unsupported.");
         }
 
         async function geocode(query) {
@@ -382,11 +413,10 @@
         }
 
         async function getDirections() {
-            const startQuery = document.getElementById('start').value;
-            const endQuery = document.getElementById('end').value;
+            const startQuery = document.getElementById('start').value, endQuery = document.getElementById('end').value;
             if (!startQuery || !endQuery) { setStatus("error: missing parameters."); return; }
 
-            setStatus("calculating vectors...");
+            setStatus(`calculating driving vector...`);
             document.getElementById('btn-sim').style.display = 'none';
             document.getElementById('route-options').innerHTML = '';
             setStats('');
@@ -395,6 +425,7 @@
                 const startCoords = await geocode(startQuery);
                 globalEndCoords = await geocode(endQuery); 
 
+                // Forced 'driving' profile
                 const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startCoords.lon},${startCoords.lat};${globalEndCoords.lon},${globalEndCoords.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`;
                 const res = await fetch(osrmUrl);
                 const data = await res.json();
@@ -402,7 +433,6 @@
                 if (data.routes.length === 0) throw new Error("no valid route found.");
 
                 allRoutesData = data.routes;
-                
                 markers.forEach(m => map.removeLayer(m));
                 markers = [];
                 const markerOpts = { radius: 5, color: '#ea1b23', fillColor: '#ea1b23', fillOpacity: 1, weight: 2 };
@@ -430,16 +460,14 @@
                 polyline.on('click', () => selectRoute(index));
                 routePolylines.push(polyline);
 
-                const timeStr = formatTime(route.duration);
-                const distStr = formatDistance(route.distance);
                 const btn = document.createElement('button');
                 btn.className = `route-btn ${isSelected ? 'selected' : ''}`;
-                btn.innerText = `route ${index + 1}: ${timeStr} (${distStr})`;
+                btn.innerText = `route ${index + 1}: ${formatTime(route.duration)} (${formatDistance(route.distance)})`;
                 btn.onclick = () => selectRoute(index);
                 optionsContainer.appendChild(btn);
 
                 if (isSelected) {
-                    setStats(`est: ${timeStr} | dist: ${distStr}`);
+                    setStats(`est: ${formatTime(route.duration)} | dist: ${formatDistance(route.distance)}`);
                     polyline.bringToFront(); 
                 }
             });
@@ -457,12 +485,10 @@
         }
 
         function calculateBearing(lat1, lon1, lat2, lon2) {
-            const toRad = deg => (deg * Math.PI) / 180;
-            const toDeg = rad => (rad * 180) / Math.PI;
+            const toRad = deg => (deg * Math.PI) / 180, toDeg = rad => (rad * 180) / Math.PI;
             const dLon = toRad(lon2 - lon1);
-            lat1 = toRad(lat1); lat2 = toRad(lat2);
-            const y = Math.sin(dLon) * Math.cos(lat2);
-            const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+            const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+            const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
             return (toDeg(Math.atan2(y, x)) + 360) % 360;
         }
 
@@ -476,6 +502,7 @@
             speakInstruction("Rerouting");
 
             try {
+                // Forced 'driving' profile
                 const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${currentLatLng[1]},${currentLatLng[0]};${globalEndCoords.lon},${globalEndCoords.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`;
                 const res = await fetch(osrmUrl);
                 const data = await res.json();
@@ -483,113 +510,97 @@
                 if (data.routes.length > 0) {
                     allRoutesData = data.routes;
                     currentStepIndex = 0; 
-                    selectRoute(0);       
+                    selectRoute(0);
+                    populateItinerary(allRoutesData[0].legs[0].steps);
                     document.getElementById('hud-instruction').classList.remove('hud-rerouting');
                     updateHUD(allRoutesData[0].legs[0].steps[0]);
                 }
-            } catch (err) { console.error("Reroute failed", err); }
+            } catch (err) {}
             isRerouting = false;
         }
 
         function startNavigation() {
-            if (allRoutesData.length === 0 || !("geolocation" in navigator)) {
-                setStatus("error: missing route or gps access.");
-                return;
-            }
+            if (allRoutesData.length === 0 || !("geolocation" in navigator)) { setStatus("error: missing route/gps."); return; }
+            if (!window.isSecureContext) { setStatus("error: https required for gps."); return; }
 
-            if (!window.isSecureContext) {
-                setStatus("error: apple requires an https connection for gps.");
-                return;
+            if (useVoice && 'speechSynthesis' in window) {
+                const unlock = new SpeechSynthesisUtterance("Starting Route.");
+                unlock.volume = 0; window.speechSynthesis.speak(unlock);
             }
 
             document.getElementById('ui-panel').style.display = 'none';
             document.getElementById('drive-hud').style.display = 'block';
             document.body.classList.add('driving'); 
-            
+            isFreeLook = false;
             currentStepIndex = 0;
-            const firstStep = allRoutesData[selectedRouteIndex].legs[0].steps[currentStepIndex];
             
-            // Set text & lanes manually for step 1 so we don't trigger the "head straight" filter
-            document.getElementById('hud-instruction').innerText = parseInstruction(firstStep);
-            document.getElementById('hud-lanes').innerHTML = parseLanes(firstStep);
+            const steps = allRoutesData[selectedRouteIndex].legs[0].steps;
+            populateItinerary(steps);
             
-            // EXPLICIT iOS AUDIO UNLOCKER: Speak exactly when the button is pressed
-            speakInstruction("Navigation started.");
+            document.getElementById('hud-instruction').innerText = parseInstruction(steps[0]);
+            document.getElementById('hud-lanes').innerHTML = parseLanes(steps[0]);
 
             if (trackerMarker) map.removeLayer(trackerMarker);
-            const chevronIcon = L.divIcon({ html: '<div class="chevron-icon">▲</div>', className: '', iconSize: [24, 24], iconAnchor: [12, 12] });
-            trackerMarker = L.marker([0,0], { icon: chevronIcon }).addTo(map);
+            const cIcon = L.divIcon({ html: `<div class="chevron-icon">▲</div>`, className: '', iconSize: [24,24], iconAnchor: [12,12] });
+            trackerMarker = L.marker([0,0], { icon: cIcon }).addTo(map);
 
             watchId = navigator.geolocation.watchPosition((pos) => {
-                const lat = pos.coords.latitude;
-                const lon = pos.coords.longitude;
-                const speedRaw = pos.coords.speed; 
+                const lat = pos.coords.latitude, lon = pos.coords.longitude, speedRaw = pos.coords.speed;
                 const currentLatLng = [lat, lon];
                 
                 trackerMarker.setLatLng(currentLatLng);
-                map.setView(currentLatLng, 18); 
                 
                 if (speedRaw !== null && !isNaN(speedRaw)) {
-                    const speedMultiplier = useImperial ? 2.23694 : 3.6; 
-                    document.getElementById('hud-speed').innerText = Math.round(speedRaw * speedMultiplier);
-                } else {
-                    document.getElementById('hud-speed').innerText = "--";
-                }
+                    document.getElementById('hud-speed').innerText = Math.round(speedRaw * (useImperial ? 2.23694 : 3.6));
+                } else document.getElementById('hud-speed').innerText = "--";
 
-                let heading = 0;
-                if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) {
-                    heading = pos.coords.heading; 
-                } else if (lastPos) {
-                    heading = calculateBearing(lastPos.lat, lastPos.lon, lat, lon); 
-                }
+                let heading = (pos.coords.heading !== null && !isNaN(pos.coords.heading)) ? pos.coords.heading : (lastPos ? calculateBearing(lastPos.lat, lastPos.lon, lat, lon) : 0);
                 lastPos = {lat, lon};
 
-                document.getElementById('map').style.transform = `rotate(${-heading}deg)`;
+                // --- SMART CAMERA LOGIC ---
+                if (!isFreeLook) {
+                    let targetZoom = 18;
+                    if (speedRaw !== null) {
+                        if (speedRaw > 20) targetZoom = 15; // >45mph: zoom out
+                        else if (speedRaw > 10) targetZoom = 16.5; // >22mph: mid zoom
+                    }
+                    map.setView(currentLatLng, targetZoom, {animate: true, duration: 0.5});
+                    document.getElementById('map').style.transform = `rotate(${-heading}deg)`;
+                }
 
                 if (!isRerouting) {
-                    let closestDistToRoute = Infinity;
+                    let closestDist = Infinity;
                     for (let i = 0; i < selectedRouteCoords.length; i++) {
                         let d = map.distance(currentLatLng, selectedRouteCoords[i]);
-                        if (d < closestDistToRoute) closestDistToRoute = d;
+                        if (d < closestDist) closestDist = d;
                     }
 
-                    if (closestDistToRoute > 30) {
-                        triggerReroute(currentLatLng);
-                        return; 
-                    }
+                    if (closestDist > 40) { triggerReroute(currentLatLng); return; }
 
-                    const selectedSteps = allRoutesData[selectedRouteIndex].legs[0].steps;
-                    if (currentStepIndex < selectedSteps.length - 1) {
-                        const nextStep = selectedSteps[currentStepIndex + 1];
-                        const nextLatLng = [nextStep.maneuver.location[1], nextStep.maneuver.location[0]];
-                        const distToNextTurn = map.distance(currentLatLng, nextLatLng);
+                    const activeSteps = allRoutesData[selectedRouteIndex].legs[0].steps;
+                    if (currentStepIndex < activeSteps.length - 1) {
+                        const nextStep = activeSteps[currentStepIndex + 1];
+                        const distToTurn = map.distance(currentLatLng, [nextStep.maneuver.location[1], nextStep.maneuver.location[0]]);
                         
-                        document.getElementById('hud-distance').innerText = formatDistance(distToNextTurn);
+                        document.getElementById('hud-distance').innerText = formatDistance(distToTurn);
 
-                        let remainingDist = distToNextTurn;
-                        for (let i = currentStepIndex + 1; i < selectedSteps.length; i++) {
-                            remainingDist += selectedSteps[i].distance;
-                        }
+                        let remDist = distToTurn;
+                        for (let i = currentStepIndex + 1; i < activeSteps.length; i++) remDist += activeSteps[i].distance;
                         
-                        const totalDist = allRoutesData[selectedRouteIndex].distance;
-                        const totalDur = Math.max(1, allRoutesData[selectedRouteIndex].duration);
-                        const avgSpeed = totalDist / totalDur; 
-                        const remainingTimeSecs = remainingDist / avgSpeed;
+                        const avgSpd = allRoutesData[selectedRouteIndex].distance / Math.max(1, allRoutesData[selectedRouteIndex].duration);
+                        document.getElementById('hud-eta').innerText = `${formatTime(remDist / avgSpd)} | ${formatDistance(remDist)}`;
 
-                        document.getElementById('hud-eta').innerText = `${formatTime(remainingTimeSecs)} | ${formatDistance(remainingDist)}`;
-
-                        if (distToNextTurn < 30) {
+                        if (distToTurn < 30) {
                             currentStepIndex++;
-                            updateHUD(selectedSteps[currentStepIndex]);
+                            updateHUD(activeSteps[currentStepIndex]);
                         }
                     } else {
-                        document.getElementById('hud-instruction').innerText = "DESTINATION REACHED.";
+                        updateInstruction("DESTINATION REACHED.");
                         document.getElementById('hud-lanes').innerHTML = "";
                         document.getElementById('hud-distance').innerText = "--";
                         document.getElementById('hud-eta').innerText = "--";
                     }
                 }
-
             }, (err) => handleGPSError(err, 'hud'), { enableHighAccuracy: true, maximumAge: 0 });
         }
 
@@ -598,10 +609,12 @@
             if (hasSpoken) window.speechSynthesis.cancel(); 
             document.getElementById('ui-panel').style.display = 'block';
             document.getElementById('drive-hud').style.display = 'none';
+            document.getElementById('itinerary-panel').style.display = 'none';
+            document.getElementById('btn-recenter').style.display = 'none';
             document.body.classList.remove('driving');
             document.getElementById('map').style.transform = 'rotate(0deg)'; 
             if (trackerMarker) map.removeLayer(trackerMarker);
-            isRerouting = false;
+            isRerouting = false; isFreeLook = false;
             document.getElementById('hud-instruction').classList.remove('hud-rerouting');
             document.getElementById('hud-lanes').innerHTML = "";
             document.getElementById('hud-speed').innerText = "--";
