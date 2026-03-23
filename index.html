@@ -7,7 +7,6 @@
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/x-icon" href="https://smalls048.github.io/Mappy/assets/mappyico.ico">
     
     <style>
         :root { 
@@ -87,10 +86,9 @@
         .hud-rerouting { color: var(--accent); animation: pulse 1s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-        /* --- NEW: Lane Guidance Styles --- */
         #hud-lanes { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; font-size: 1.8rem; font-weight: bold; }
-        .lane { color: #555555; } /* Invalid lane (dim) */
-        .lane.valid { color: var(--accent); text-shadow: 0 0 5px rgba(234, 27, 35, 0.5); } /* Valid lane (red & glowing) */
+        .lane { color: #555555; } 
+        .lane.valid { color: var(--accent); text-shadow: 0 0 5px rgba(234, 27, 35, 0.5); } 
 
         .hud-metrics { display: flex; justify-content: space-around; align-items: center; margin-bottom: 10px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 5px 0; }
         .metric-box { display: flex; flex-direction: column; }
@@ -159,7 +157,9 @@
 
     <div id="drive-hud">
         <div id="hud-instruction">Proceed to Route</div>
-        <div id="hud-lanes"></div> <div class="hud-metrics">
+        <div id="hud-lanes"></div> 
+        
+        <div class="hud-metrics">
             <div class="metric-box">
                 <span id="hud-speed" class="metric-val">--</span>
                 <span class="metric-label">Speed</span>
@@ -184,7 +184,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <script>
-        // --- Core State ---
         const map = L.map('map', { zoomControl: false }).setView([51.505, -0.09], 13);
         let isLightMode = false, useImperial = false, useVoice = true;
         
@@ -197,16 +196,24 @@
         let trackerMarker = null, watchId = null, currentStepIndex = 0;
         let lastPos = null, isRerouting = false;
 
+        // --- iOS Voice State Variables ---
+        let hasSpoken = false; 
+        let currentUtterance = null; // Stored globally to prevent Apple Garbage Collection
+
         const setStatus = (msg) => document.getElementById('status').innerText = msg;
         const setStats = (msg) => document.getElementById('stats').innerText = msg;
 
-        // --- Auto Day/Night Switcher ---
+        // Pre-load iOS Safari Voices to prevent silent failures
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.getVoices();
+            window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+        }
+
         if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) toggleTheme(); 
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
             if ((event.matches && isLightMode) || (!event.matches && !isLightMode)) toggleTheme();
         });
 
-        // --- Search Autocomplete ---
         function setupAutocomplete(inputId, listId) {
             const input = document.getElementById(inputId);
             const list = document.getElementById(listId);
@@ -239,26 +246,25 @@
         setupAutocomplete('start', 'start-autocomplete');
         setupAutocomplete('end', 'end-autocomplete');
 
-        // --- Voice Navigation (TTS) & iOS Fix ---
-        function unlockAudioForIOS() {
-            // iOS Safari requires SpeechSynthesis to be initialized during a direct user interaction
-            if (useVoice && 'speechSynthesis' in window) {
-                const unlockMsg = new SpeechSynthesisUtterance('');
-                unlockMsg.volume = 0; // Silent
-                window.speechSynthesis.speak(unlockMsg);
-            }
-        }
-
+        // --- NEW SAFARI TTS ENGINE ---
         function speakInstruction(text) {
             if (!useVoice || !('speechSynthesis' in window)) return;
-            window.speechSynthesis.cancel(); 
+            
+            // CRITICAL iOS FIX: Only cancel IF audio has successfully played before
+            if (hasSpoken) {
+                window.speechSynthesis.cancel(); 
+            }
+            
             if (text.toLowerCase().includes("head ") || text.toLowerCase().includes("continue")) return; 
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 1.0; 
-            window.speechSynthesis.speak(utterance);
+            
+            currentUtterance = new SpeechSynthesisUtterance(text);
+            currentUtterance.rate = 1.0; 
+            
+            // Mark the engine as successfully activated
+            hasSpoken = true; 
+            window.speechSynthesis.speak(currentUtterance);
         }
 
-        // --- UI & Settings Logic ---
         function toggleSettings() {
             const mainView = document.getElementById('view-main');
             const settingsView = document.getElementById('view-settings');
@@ -286,7 +292,6 @@
             document.getElementById('btn-voice').style.color = useVoice ? "var(--fg)" : "#888";
         }
 
-        // --- Formatting Functions ---
         function formatDistance(meters) {
             if (useImperial) {
                 const miles = meters * 0.000621371;
@@ -313,43 +318,46 @@
             return text;
         }
 
-        // --- NEW: Lane Guidance Parser ---
         function parseLanes(step) {
             if (!step.intersections) return "";
-            
-            // Look for the first intersection in this step that actually has lane data
             for (let i = 0; i < step.intersections.length; i++) {
                 const lanes = step.intersections[i].lanes;
                 if (lanes && lanes.length > 0) {
                     let html = "";
                     lanes.forEach(lane => {
-                        let arrow = "↑"; // Default straight
+                        let arrow = "↑"; 
                         const ind = lane.indications ? lane.indications[0].toLowerCase() : "";
-                        
                         if (ind.includes("left")) arrow = ind.includes("slight") ? "↖" : "↰";
                         else if (ind.includes("right")) arrow = ind.includes("slight") ? "↗" : "↱";
                         else if (ind.includes("uturn")) arrow = "⤻";
-
-                        // Apply the .valid class if this lane is allowed for our route
                         html += `<span class="lane ${lane.valid ? 'valid' : ''}">${arrow}</span>`;
                     });
                     return html;
                 }
             }
-            return ""; // No lane data available for this step
+            return ""; 
         }
 
         function updateHUD(step) {
             const text = parseInstruction(step);
             document.getElementById('hud-instruction').innerText = text;
-            
-            // Update the new lane visualizer
             document.getElementById('hud-lanes').innerHTML = parseLanes(step);
-            
             speakInstruction(text); 
         }
 
-        // --- Core App Logic ---
+        function handleGPSError(err, outputTarget) {
+            if (!window.isSecureContext) {
+                const msg = "error: ios requires https for gps.";
+                outputTarget === 'status' ? setStatus(msg) : document.getElementById('hud-distance').innerText = msg;
+            } else if (err.code === 1) {
+                const msg = "error: check ios settings > privacy > location.";
+                outputTarget === 'status' ? setStatus(msg) : document.getElementById('hud-distance').innerText = "Permission Denied";
+            } else {
+                const msg = "error: weak gps signal.";
+                outputTarget === 'status' ? setStatus(msg) : document.getElementById('hud-distance').innerText = "Signal Lost";
+            }
+        }
+
         function useCurrentLocation() {
             setStatus("acquiring satellite lock...");
             if ("geolocation" in navigator) {
@@ -359,7 +367,7 @@
                     document.getElementById('start').value = `${lat}, ${lon}`;
                     map.setView([lat, lon], 14);
                     setStatus("location acquired.");
-                }, () => setStatus("error: location access denied."), { enableHighAccuracy: true });
+                }, (err) => handleGPSError(err, 'status'), { enableHighAccuracy: true });
             } else { setStatus("error: geolocation unsupported."); }
         }
 
@@ -461,7 +469,7 @@
             isRerouting = true;
             document.getElementById('hud-instruction').innerText = "REROUTING...";
             document.getElementById('hud-instruction').classList.add('hud-rerouting');
-            document.getElementById('hud-lanes').innerHTML = ""; // Clear lanes while rerouting
+            document.getElementById('hud-lanes').innerHTML = ""; 
             document.getElementById('hud-distance').innerText = "calculating...";
             document.getElementById('hud-eta').innerText = "--";
             speakInstruction("Rerouting");
@@ -476,8 +484,6 @@
                     currentStepIndex = 0; 
                     selectRoute(0);       
                     document.getElementById('hud-instruction').classList.remove('hud-rerouting');
-                    
-                    // Update HUD with the new first step (text and lanes)
                     updateHUD(allRoutesData[0].legs[0].steps[0]);
                 }
             } catch (err) { console.error("Reroute failed", err); }
@@ -485,20 +491,29 @@
         }
 
         function startNavigation() {
-            if (allRoutesData.length === 0 || !("geolocation" in navigator)) return;
+            if (allRoutesData.length === 0 || !("geolocation" in navigator)) {
+                setStatus("error: missing route or gps access.");
+                return;
+            }
 
-            // --- iOS AUDIO FIX ---
-            // Triggered exactly when the user taps the button
-            unlockAudioForIOS();
+            if (!window.isSecureContext) {
+                setStatus("error: apple requires an https connection for gps.");
+                return;
+            }
 
             document.getElementById('ui-panel').style.display = 'none';
             document.getElementById('drive-hud').style.display = 'block';
             document.body.classList.add('driving'); 
             
             currentStepIndex = 0;
+            const firstStep = allRoutesData[selectedRouteIndex].legs[0].steps[currentStepIndex];
             
-            // Push initial step to HUD (Text and Lanes)
-            updateHUD(allRoutesData[selectedRouteIndex].legs[0].steps[currentStepIndex]);
+            // Set text & lanes manually for step 1 so we don't trigger the "head straight" filter
+            document.getElementById('hud-instruction').innerText = parseInstruction(firstStep);
+            document.getElementById('hud-lanes').innerHTML = parseLanes(firstStep);
+            
+            // EXPLICIT iOS AUDIO UNLOCKER: Speak exactly when the button is pressed
+            speakInstruction("Navigation started.");
 
             if (trackerMarker) map.removeLayer(trackerMarker);
             const chevronIcon = L.divIcon({ html: '<div class="chevron-icon">▲</div>', className: '', iconSize: [24, 24], iconAnchor: [12, 12] });
@@ -562,28 +577,24 @@
 
                         document.getElementById('hud-eta').innerText = `${formatTime(remainingTimeSecs)} | ${formatDistance(remainingDist)}`;
 
-                        // Move to next step if close enough
                         if (distToNextTurn < 30) {
                             currentStepIndex++;
-                            // Feed the whole step object so we get both Voice, Text, and Lane visualizer
                             updateHUD(selectedSteps[currentStepIndex]);
                         }
                     } else {
                         document.getElementById('hud-instruction').innerText = "DESTINATION REACHED.";
-                        document.getElementById('hud-lanes').innerHTML = ""; // Clear lanes at end
+                        document.getElementById('hud-lanes').innerHTML = "";
                         document.getElementById('hud-distance').innerText = "--";
                         document.getElementById('hud-eta').innerText = "--";
                     }
                 }
 
-            }, (err) => {
-                document.getElementById('hud-distance').innerText = "Signal Lost";
-            }, { enableHighAccuracy: true, maximumAge: 0 });
+            }, (err) => handleGPSError(err, 'hud'), { enableHighAccuracy: true, maximumAge: 0 });
         }
 
         function exitNavigation() {
             if (watchId) navigator.geolocation.clearWatch(watchId);
-            window.speechSynthesis.cancel(); 
+            if (hasSpoken) window.speechSynthesis.cancel(); 
             document.getElementById('ui-panel').style.display = 'block';
             document.getElementById('drive-hud').style.display = 'none';
             document.body.classList.remove('driving');
